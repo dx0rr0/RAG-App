@@ -1,9 +1,22 @@
-# Ignore all
+# Ignore generated data and model/index artifacts.
 *
-
+**/.env
 !.gitignore
 !cli_interface.py
 !vector_db_manager.py
 !llm_interaction.py
+!hybrid_retrieval.py
+!retrieval_evaluation.py
 !talk_with_db.py
 !download_channel.py
+!README.md
+!requirements.txt
+!MEASUREMENTS.md
+!api_config.py
+!transcription_benchmark.py
+!RAG_EVALUATION.md
+!tests/
+!tests/**
+tests/__pycache__/
+tests/**/__pycache__/
+**/*.pyc
