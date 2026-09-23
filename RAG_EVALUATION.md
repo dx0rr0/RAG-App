@@ -171,3 +171,21 @@ Las puntuaciones máximas Jev en las 9 consultas respondibles fueron `0.81–0.9
 OpenRouter reportó **$0.001178772** para la ejecución guardada (28.066 tokens de entrada, 2.087 de salida). La primera tanda de 120 juicios se cobró **$0.001297464**, pero un error local al procesar su respuesta impidió guardar los scores; repetí con 108 juicios top 9. Incluyo ambos importes en el coste del experimento: **$0.002476236**. El total conocido pasa de **$0.07264964** a **$0.075125876** de los $7 cargados; quedan aproximadamente **$6.924874**. El precio publicado para Jev 1.13 es $0.042/M tokens de entrada y $0/M de salida ([OpenRouter](https://openrouter.ai/typesafe/jev-1.13/)); para el gasto de esta prueba usé el coste real informado por OpenRouter.
 
 Resultados por consulta, rankings, puntuaciones, tokens y tiempos: [JSON local del piloto](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/jev_rerank_pilot_results.json>). Esto evalúa recuperación de evidencia en el texto transcrito; no mide la calidad de respuestas generadas ni valida las transcripciones contra el audio.
+
+## Comparación directa de rerankers: Jev y Cohere (2026-09-23)
+
+Para responder a la comparación de coste y calidad, ejecuté Cohere Rerank v3.5 sobre exactamente las mismas 12 consultas y las mismas shortlists BM25 top 9 que recibió Jev: 9 preguntas respondibles y 3 sin respuesta en el texto, 108 candidatos juzgados por modelo. Cohere hizo 12 búsquedas pagadas; no hubo reintentos. OpenRouter cobró **$0.012** (`$0.001` por búsqueda según su [precio publicado](https://openrouter.ai/cohere/rerank-v3.5/api)).
+
+| Método | Recall@3 | MRR | nDCG@3 | Recall@5 | API para 12 consultas |
+|---|---:|---:|---:|---:|---:|
+| BM25 local, top 9 | 0.667 | 0.568 | 0.544 | 0.889 | $0.000 |
+| BM25 + Jev | 1.000 | **0.944** | **0.959** | 1.000 | $0.001179 por pasada guardada |
+| BM25 + Cohere Rerank v3.5 | 1.000 | 0.926 | 0.944 | 1.000 | $0.012 |
+
+Ambos rerankers ponen los nueve gold chunks etiquetados en top 3. Jev queda ligeramente por delante en MRR y nDCG, una diferencia pequeña para nueve ejemplos. Rangos gold por consulta (BM25→Jev→Cohere): q01 `4→1→3`, q02 `2→1→1`, q03 `1→1→1`, q05 `1→1→1`, q06 `2→1→1`, q07 `1→2→1`, q09 `4→1→1`, q10 `9→1→1`, q11 `2→1→1`. En q07 el chunk inmediatamente siguiente (#21) también contiene una formulación que responde la pregunta, aunque el gold asignado fue el chunk #20; por ello la diferencia de MRR puede depender de esa etiqueta singular. q01 favorece a Jev (primero frente a tercero).
+
+BM25 no hizo llamadas a OpenRouter. La pasada Jev con resultados guardados costó **$0.001178772** para 12 consultas, unos **$0.0000982 por consulta**. El total Jev facturado durante el experimento fue **$0.002476236**, incluyendo el primer intento cobrado cuyo postprocesamiento local no guardó los resultados. Cohere cuesta unos **10.2×** la pasada Jev guardada. El gasto OpenRouter conocido acumulado pasa de **$0.075125876** a **$0.087125876**, aproximadamente **$6.912874** restantes de los $7.
+
+Los max scores Jev fueron `0.81–0.96` en positivas y `0.02–0.03` en negativas. Los Cohere relevance scores fueron `0.2533–0.9112` y `0.1393–0.2289`, respectivamente; un corte entre `0.2289` y `0.2533` separa estas etiquetas concretas. Los scores de los dos modelos no son directamente comparables y tres negativas no bastan para calibrar abstención en producción.
+
+Resultados detallados y costes por llamada: [piloto Cohere sobre las shortlists de Jev](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/cohere_rerank_pilot_results.json>). Se conserva también el [JSON del piloto Jev](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/jev_rerank_pilot_results.json>) y el [script de comparación](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/run_cohere_rerank_pilot.py>).
