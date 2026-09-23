@@ -39,6 +39,7 @@ Hacer que la aplicación RAG arranque de forma reproducible, reutilice su índic
 - [x] Citas con IDs de fuente y abstención por score mínimo. Una prueba manual con GPT-6 Luna se abstuvo correctamente cuando faltaba la hora exacta.
 - [x] Evaluación hospedada de Cohere Rerank v3.5: mejoró el orden en este único vídeo, por $0.025 en 25 búsquedas; no se considera validación de producción.
 - [x] Comprobador semántico de fidelidad opt-in en `ask()` vía `--check-faithfulness`, con límites conservadores y abstención fail-closed. Verificado con mocks en 38 pruebas; no se ha hecho una llamada real al checker.
+- [x] Chat multivuelta con historial limitado a cuatro turnos, reformulación de seguimientos probables antes de recuperar, citas basadas en evidencia del turno actual, `/clear` y opción para desactivarlo. Suite con mocks; sin llamadas facturadas.
 
 ### Pendiente
 

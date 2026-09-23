@@ -76,6 +76,8 @@ Inicia el chat con retrieval vectorial (modo predeterminado):
 python cli_interface.py --transcriptions transcriptions/canal --index data/canal.parquet
 ```
 
+El chat conserva en memoria los últimos cuatro turnos para entender preguntas de seguimiento como «¿Y qué propone?». Antes de recuperar, una regla local detecta referencias probables y solo entonces reformula la consulta con el backend/modelo elegido; la respuesta sigue usando únicamente evidencia recuperada en el turno actual y conserva sus citas. Las reformulaciones de OpenRouter usan el mismo modelo y `reasoning_effort` configurados, con un máximo de 96 tokens de salida; el coste se muestra como una llamada separada y no hay llamadas de reescritura para consultas autónomas. Si la reformulación falla, se busca con la pregunta original y no se reintenta. Usa `/clear` para borrar el historial de la sesión o `--history-turns 0` para desactivar esta función. El historial vive solo mientras el proceso del CLI está abierto. Con backend OpenRouter, el historial reciente también se envía en las llamadas de reformulación y respuesta; con backend local, se queda en el equipo.
+
 Prueba retrieval híbrido con BM25 y embeddings, seguido de RRF:
 
 ```powershell
@@ -102,6 +104,7 @@ Opciones útiles:
 
 - `--device auto|cuda|cpu`: elige el dispositivo. Si CUDA no está disponible, el código cae a CPU.
 - `--top-k 5`: fragmentos finales a usar.
+- `--history-turns 4`: pares recientes de pregunta/respuesta que se conservan para seguimientos; `0` desactiva el historial.
 - `--candidate-k 20`: candidatos de BM25/vector antes de la fusión.
 - `--reranker-candidate-k 9`: máximo de candidatos fusionados enviados al reranker.
 - `--jev-max-estimated-cost-usd 0.001`: estimación máxima por consulta antes de llamar a Jev.

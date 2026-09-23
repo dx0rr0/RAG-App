@@ -5,7 +5,12 @@ import textwrap
 from api_config import get_openrouter_api_key
 from hybrid_retrieval import BM25Index, load_cross_encoder
 from jev_reranker import JevReranker, JevRerankerError
-from llm_interaction import ask, load_model, openrouter_faithfulness_checker
+from llm_interaction import (
+    DEFAULT_CONVERSATION_TURNS,
+    ask,
+    load_model,
+    openrouter_faithfulness_checker,
+)
 from vector_db_manager import (
     DEFAULT_EMBEDDING_MODEL,
     embeddings_tensor,
@@ -35,6 +40,12 @@ def build_parser():
     )
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument(
+        "--history-turns",
+        type=int,
+        default=DEFAULT_CONVERSATION_TURNS,
+        help="Recent user/assistant turn pairs to keep for follow-up questions; 0 disables chat history.",
+    )
     parser.add_argument(
         "--retrieval-mode",
         choices=("vector", "hybrid"),
@@ -99,6 +110,8 @@ def main(argv=None):
         )
     if args.top_k < 0:
         raise SystemExit("--top-k must be greater than or equal to zero")
+    if args.history_turns < 0:
+        raise SystemExit("--history-turns must be greater than or equal to zero")
     if args.top_k == 0 and not args.index_only:
         raise SystemExit("--top-k must be at least 1 when running interactive chat")
     if args.candidate_k < 1:
@@ -178,7 +191,8 @@ def main(argv=None):
                         print(f"[Jev] {exc}", file=sys.stderr)
                         # Preserve the incoming RRF order when Jev cannot rerank.
                         return list(range(len(candidate_texts), 0, -1))
-    print("Welcome! Type 'exit' to quit.")
+    print("Welcome! Type 'exit' to quit or '/clear' to clear conversation history.")
+    conversation_history = []
     while True:
         try:
             query = input("Enter your query: ").strip()
@@ -187,6 +201,10 @@ def main(argv=None):
             break
         if query.lower() == "exit":
             break
+        if query.lower() == "/clear":
+            conversation_history.clear()
+            print("Historial de la conversación borrado.\n")
+            continue
         if not query:
             print("Escribe una consulta o 'exit' para salir.")
             continue
@@ -212,10 +230,18 @@ def main(argv=None):
             llm_backend=args.llm_backend,
             api_model=api_model,
             reasoning_effort=args.reasoning_effort,
+            conversation_history=conversation_history,
+            history_turns=args.history_turns,
         )
         print()
         print_wrapped(response)
         print()
+        if args.history_turns > 0:
+            conversation_history.extend((
+                {"role": "user", "content": query},
+                {"role": "assistant", "content": response},
+            ))
+            conversation_history = conversation_history[-(args.history_turns * 2):]
     return 0
 
 
