@@ -16,10 +16,23 @@ GPT_6_LUNA_INPUT_USD_PER_MILLION = 0.10
 GPT_6_LUNA_CACHED_INPUT_USD_PER_MILLION = 0.01
 GPT_6_LUNA_OUTPUT_USD_PER_MILLION = 0.50
 FAITHFULNESS_MODEL = "openai/gpt-6-luna"
-FAITHFULNESS_MAX_TOKENS = 64
+FAITHFULNESS_MAX_TOKENS = 512
 FAITHFULNESS_TIMEOUT_SECONDS = 20
 FAITHFULNESS_MAX_ANSWER_CHARS = 4000
 FAITHFULNESS_MAX_EVIDENCE_CHARS = 8000
+
+
+def _is_clear_uncited_abstention(answer):
+    """Allow an explicit, citation-free abstention without waiving citations on facts."""
+    text = re.sub(r"\s+", " ", str(answer or "")).strip()
+    patterns = (
+        r"no puedo determinar(?:lo)?",
+        r"no se puede determinar(?:lo)?",
+        r"no puedo confirmar(?:lo)?",
+        r"no hay (?:evidencia|informaci[oó]n) suficiente(?: en (?:el contexto|las fuentes|la transcripci[oó]n))?(?: para (?:responder(?: a la consulta)?|determinar|confirmar)[^.!?]{0,180})?",
+        r"(?:el contexto|la transcripci[oó]n|las fuentes) no (?:indica|especifica|menciona|contiene) [^.!?]{1,180}",
+    )
+    return any(re.fullmatch(r"(?:" + pattern + r")[.!?]*", text, flags=re.IGNORECASE) for pattern in patterns)
 
 
 def bounded_top_k(top_k, corpus_size):
@@ -200,9 +213,11 @@ def check_answer_grounding(answer, context_items, faithfulness_checker=None):
     ]
     valid_ids = sorted(set(cited_ids) & allowed_ids)
     unknown_ids = sorted(set(cited_ids) - allowed_ids)
+    uncited_abstention = not cited_ids and _is_clear_uncited_abstention(answer)
     result = {
         "evidence_available": bool(context_items),
-        "citation_valid": bool(valid_ids) and not unknown_ids,
+        "citation_valid": (bool(valid_ids) and not unknown_ids) or (uncited_abstention and not unknown_ids),
+        "uncited_abstention": uncited_abstention,
         "cited_source_ids": valid_ids,
         "unknown_source_ids": unknown_ids,
         "semantic_faithfulness_checked": False,

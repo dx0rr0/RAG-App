@@ -82,6 +82,43 @@ class CitationAndEvidenceTests(unittest.TestCase):
         self.assertEqual(unknown["unknown_source_ids"], [99])
         self.assertFalse(unknown["citation_valid"])
 
+    def test_clear_abstention_may_omit_citation_but_factual_detail_may_not(self):
+        context = build_cited_context(
+            [{"page_content": "La transcripción menciona el aviso del 29 de julio."}], [0]
+        )
+        abstention = check_answer_grounding("No puedo determinar", context)
+        self.assertTrue(abstention["uncited_abstention"])
+        self.assertTrue(abstention["citation_valid"])
+
+        factual = check_answer_grounding(
+            "El aviso llegó el 29 de julio, pero no se indica la hora.", context
+        )
+        self.assertFalse(factual["uncited_abstention"])
+        self.assertFalse(factual["citation_valid"])
+
+        unknown = check_answer_grounding("No puedo determinar [Fuente 99]", context)
+        self.assertFalse(unknown["uncited_abstention"])
+        self.assertFalse(unknown["citation_valid"])
+
+    def test_ask_returns_a_clear_uncited_abstention(self):
+        with (
+            patch("llm_interaction._vector_search", return_value=[(0, 0.8)]),
+            patch("llm_interaction._render_prompt", side_effect=lambda _tokenizer, prompt: prompt),
+            patch("llm_interaction._generate_with_openrouter", return_value="No puedo determinar"),
+        ):
+            answer = ask(
+                "¿A qué hora ocurrió?",
+                embeddings=None,
+                embedding_function=None,
+                llm_model=None,
+                tokenizer=None,
+                df=[{"page_content": "El aviso llegó el 29 de julio.", "source": "clip.txt"}],
+                top_k=1,
+                llm_backend="openrouter",
+            )
+        self.assertTrue(answer.startswith("No puedo determinar"))
+        self.assertIn("Fuentes recuperadas:", answer)
+
     def test_semantic_verifier_is_explicit_and_opt_in(self):
         context = build_cited_context([{"page_content": "evidencia"}], [0])
         result = check_answer_grounding(
@@ -146,7 +183,7 @@ class CitationAndEvidenceTests(unittest.TestCase):
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["model"], "openai/gpt-6-luna")
         self.assertEqual(payload["reasoning_effort"], "low")
-        self.assertEqual(payload["max_tokens"], 64)
+        self.assertEqual(payload["max_tokens"], 512)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 20)
         prompt = payload["messages"][0]["content"]

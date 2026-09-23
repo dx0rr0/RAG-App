@@ -110,7 +110,7 @@ La rama OpenRouter de `ask()` llamaba a `_generate_with_openai`, que no existía
 
 ## Verificador semántico de fidelidad (2026-09-23)
 
-Se conectó un verificador semántico opcional al flujo `ask()`. Está desactivado por defecto; `--check-faithfulness` lo activa con GPT-6 Luna `low` en OpenRouter. La petición limita la respuesta a 4.000 caracteres, la evidencia total a 8.000, la salida a 64 tokens y el timeout a 20 s. Si se exceden los límites o falta/falla un veredicto JSON booleano explícito, `ask()` se abstiene (fail-closed). La prueba automatizada completa pasa **38/38 tests**, incluidos los mocks del verificador; no se hicieron llamadas reales ni facturables a OpenRouter para esta implementación. El coste adicional **$0.0002–$0.001 por respuesta** es una estimación documentada, no gasto medido.
+Se conectó un verificador semántico opcional al flujo `ask()`. Está desactivado por defecto; `--check-faithfulness` lo activa con GPT-6 Luna `low` en OpenRouter. La petición limita la respuesta a 4.000 caracteres, la evidencia total a 8.000 caracteres y el timeout a 20 s. En la primera implementación, la salida tenía un tope de 64 tokens; la evaluación ampliada mostró que el modelo agotaba ese cupo en razonamiento. Se elevó a 512 tokens. Si se exceden los límites o falta/falla un veredicto JSON booleano explícito, `ask()` se abstiene (fail-closed). La estimación anterior de **$0.0002–$0.001 por respuesta** no era gasto medido.
 
 ## Límites y siguiente fase
 
@@ -189,3 +189,39 @@ BM25 no hizo llamadas a OpenRouter. La pasada Jev con resultados guardados cost�
 Los max scores Jev fueron `0.81–0.96` en positivas y `0.02–0.03` en negativas. Los Cohere relevance scores fueron `0.2533–0.9112` y `0.1393–0.2289`, respectivamente; un corte entre `0.2289` y `0.2533` separa estas etiquetas concretas. Los scores de los dos modelos no son directamente comparables y tres negativas no bastan para calibrar abstención en producción.
 
 Resultados detallados y costes por llamada: [piloto Cohere sobre las shortlists de Jev](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/cohere_rerank_pilot_results.json>). Se conserva también el [JSON del piloto Jev](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/jev_rerank_pilot_results.json>) y el [script de comparación](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/run_cohere_rerank_pilot.py>).
+
+## Benchmark ampliado Jev vs Cohere y respuestas RAG (2026-09-23)
+
+Amplié la comparación a **24 consultas** sobre las tres transcripciones Qwen revisadas: **18 respondibles y 6 sin evidencia suficiente**, con 138 chunks. BM25 entregó los mismos top 9 a ambos rerankers; la cobertura de candidatos fue 18/18. El repaso de etiquetas encontró pasajes alternativos que responden por sí mismos: q01 admite los chunks 0 o 2; q07, 20 o 21; q09, 5 u 8. Las métricas principales cuentan cada pregunta como una unidad: basta recuperar cualquiera de sus chunks aceptados, sin penalizar ventanas solapadas ni exigir pasajes duplicados.
+
+| Método | Recall@3 | MRR | nDCG@3 | API por 24 consultas |
+|---|---:|---:|---:|---:|
+| BM25 local, top 9 | 0.944 (17/18) | 0.840 | 0.862 | $0 |
+| BM25 + Jev 1.13 | **1.000 (18/18)** | **1.000** | **1.000** | **$0.002365** |
+| BM25 + Cohere Rerank v3.5 | **1.000 (18/18)** | **1.000** | **1.000** | $0.024 |
+
+El top 9 BM25 ya contenía la evidencia; rerankear mejoró el orden, no la cobertura. Jev y Cohere empataron con las etiquetas revisadas. Jev costó **$0.0000985 por consulta** frente a **$0.001** de Cohere, unas **10.1×** menos. Esto favorece Jev como candidato económico, pero son preguntas curadas de tres vídeos y seis negativas, no una decisión de producción.
+
+Los scores máximos Jev fueron `0.84–0.98` en positivas y `0.02–0.10` en negativas; cortes entre `0.3` y `0.8` separaron estos 24 casos. Cohere obtuvo `0.253–0.911` y `0.139–0.830`; los rangos se solapan. No fijé umbral de producción con seis negativas.
+
+### Respuestas, citas y fidelidad
+
+Con el top 3 Jev probé `openai/gpt-6-luna`, `reasoning_effort=low`, sobre las 24 preguntas y añadí un control BM25-only para q10 (su gold estaba en BM25 rank 9, fuera del top 3). Reutilicé el formateador de prompt/citas del repo, el validador de procedencia y un checker semántico. Revisé las respuestas contra las transcripciones.
+
+- Las 18 respuestas positivas estaban apoyadas por el texto; las seis negativas obtuvieron una abstención clara.
+- Antes de corregir el validador, 23/24 salidas Jev tenían cita válida: q08 respondió «No puedo determinar» sin cita y `ask()` lo rechazaba. Ahora una abstención breve y explícita puede pasar sin cita; las respuestas factuales aún necesitan fuente y las citas desconocidas siguen rechazándose. La salida q08 pasa la nueva regla al recalcular localmente, sin nueva llamada pagada.
+- El checker agotó inicialmente su límite de 64 tokens: 13 respuestas JSON quedaron vacías o parciales. Repetí solo esos veredictos con un límite mayor: 12 quedaron válidos en 256 tokens y el restante en 512. Resultado final: 20 `supported=true`, 5 `false`, 0 malformados de 25 casos. Cuatro rechazos son respuestas positivas que la revisión humana encontró respaldadas; el restante corresponde al control BM25 sin evidencia. El checker conserva falsos negativos, así que recomiendo mantenerlo opt-in/fail-closed mientras se calibra.
+- En el control BM25 de q10 faltaba el pasaje sobre la inversión masiva en capacidad: Luna no dio esa respuesta y el checker rechazó la salida. Jev colocó el fragmento correcto primero y produjo una respuesta citada.
+
+Costes informados: Jev **$0.00236502**; Cohere **$0.024**; generación **$0.0027837**; checker, incluidos los primeros veredictos y las repeticiones truncadas, **$0.0037644**. Total de esta evaluación: **$0.03291312**, bajo el tope de $0.04. El gasto OpenRouter conocido acumulado pasa de **$0.087125876** a **$0.120038996**; quedan aproximadamente **$6.879961** de los $7 iniciales. La primera comprobación de red bloqueada antes de conectar no tuvo coste.
+
+Subí `FAITHFULNESS_MAX_TOKENS` a 512 y añadí soporte para abstenciones sin cita. La suite local pasa **40/40 tests**; no repetí llamadas facturables para validar esos cambios.
+
+Artefactos: [rankings y métricas](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/expanded_reranker_comparison_results.json>), [respuestas/citas/checker](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/jev_rag_answer_evaluation.json>), [variantes de evidencia adjudicadas](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/adjudicated_evidence_variants.json>), [corpus y diario](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/RAG_EVALUATION_DATASET.md>), [runner del reranking](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/run_expanded_reranker_comparison.py>) y [runner end-to-end](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/run_jev_rag_answer_eval.py>).
+
+### Siguiente fase
+
+1. Integrar Jev como opción explícita en `ask()` detrás de `hybrid_search`, sobre BM25 top 9, con timeout/error controlados y caché para no pagar consultas repetidas.
+2. Preparar un conjunto retenido de preguntas nuevas sobre más transcripciones y revisar sus pasajes gold antes de comparar. Separar ranking de calibración de abstención.
+3. Reducir falsos negativos del checker sin relajar su cierre ante fallos técnicos; medirlo de nuevo antes de activarlo para usuarios.
+4. Comparar las respuestas, citas y abstenciones end-to-end de BM25, Cohere y Jev en ese conjunto retenido. Mantener Jev experimental hasta comprobar generalización y latencia en producción.
