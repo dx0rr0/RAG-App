@@ -461,6 +461,7 @@ def ask(
     candidate_k=20,
     rrf_constant=60,
     reranker=None,
+    reranker_candidate_k=None,
     min_evidence_score=0.35,
     faithfulness_checker=None,
     llm_backend="local",
@@ -491,6 +492,7 @@ def ask(
             candidate_k=candidate_k,
             rrf_constant=rrf_constant,
             reranker=reranker,
+            reranker_candidate_k=reranker_candidate_k,
         )
         indices = [hit.index for hit in hits]
         evidence_scores = [hit.vector_score for hit in hits]

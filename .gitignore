@@ -6,6 +6,7 @@
 !vector_db_manager.py
 !llm_interaction.py
 !hybrid_retrieval.py
+!jev_reranker.py
 !retrieval_evaluation.py
 !talk_with_db.py
 !download_channel.py

@@ -222,6 +222,36 @@ class CitationAndEvidenceTests(unittest.TestCase):
             low_score = ask(**args)
         self.assertIn("evidencia suficiente", low_score)
 
+    def test_jev_reranking_does_not_replace_vector_evidence_gate(self):
+        from hybrid_retrieval import BM25Index
+
+        documents = [
+            {"page_content": "El pasaje menciona la reunión.", "source": "clip.txt"},
+            {"page_content": "Otro texto sin relación.", "source": "clip.txt"},
+        ]
+        with (
+            patch("llm_interaction._vector_search", return_value=[(0, 0.2), (1, 0.1)]),
+            patch("llm_interaction._generate_with_openrouter") as generate,
+        ):
+            answer = ask(
+                "¿Qué pasó en la reunión?",
+                embeddings=None,
+                embedding_function=None,
+                llm_model=None,
+                tokenizer=None,
+                df=documents,
+                top_k=1,
+                retrieval_mode="hybrid",
+                bm25_index=BM25Index([row["page_content"] for row in documents]),
+                candidate_k=2,
+                reranker=lambda query, candidates: [1.0, 0.0],
+                min_evidence_score=0.35,
+                llm_backend="openrouter",
+            )
+
+        self.assertIn("evidencia suficiente", answer)
+        generate.assert_not_called()
+
     def test_openrouter_backend_calls_configured_generator_without_network_in_test(self):
         args = {
             "query": "¿Qué afirmó el gobierno?",

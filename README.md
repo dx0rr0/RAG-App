@@ -88,11 +88,23 @@ El reranking con cross-encoder es opcional y solo carga el modelo si se especifi
 python cli_interface.py --retrieval-mode hybrid --reranker-model BAAI/bge-reranker-v2-m3
 ```
 
+También puedes elegir Jev de OpenRouter como reranker del top de la recuperación híbrida:
+
+```powershell
+python cli_interface.py --retrieval-mode hybrid --reranker jev --llm-backend openrouter
+```
+
+Jev recibe la consulta y, por defecto, hasta 9 fragmentos fusionados por BM25+vectores. Hace como máximo una petición por consulta; una estimación conservadora por encima de `$0.001` detiene esa petición y mantiene el orden RRF. Si Jev falla, la consulta continúa con RRF y muestra un aviso. El límite es un preflight estimado, no una garantía de facturación. Las puntuaciones se guardan en `.rag-app-cache/jev-reranker-v1.json` bajo hashes, sin conservar consultas, fragmentos, respuestas del API ni la clave; las consultas repetidas usan la caché y no cuestan. Borrar esa caché permite solicitar de nuevo puntuaciones ya almacenadas.
+
+Al activar esta opción se envían la consulta y los fragmentos candidatos a OpenRouter. En la evaluación de 24 consultas Jev costó `$0.002365` en total (aprox. `$0.0000985` por consulta). Su puntuación solo reordena candidatos; no sustituye el umbral vectorial de evidencia ni decide por sí sola si una respuesta puede contestarse. Jev y el cross-encoder local son opciones excluyentes.
+
 Opciones útiles:
 
 - `--device auto|cuda|cpu`: elige el dispositivo. Si CUDA no está disponible, el código cae a CPU.
 - `--top-k 5`: fragmentos finales a usar.
 - `--candidate-k 20`: candidatos de BM25/vector antes de la fusión.
+- `--reranker-candidate-k 9`: máximo de candidatos fusionados enviados al reranker.
+- `--jev-max-estimated-cost-usd 0.001`: estimación máxima por consulta antes de llamar a Jev.
 - `--min-evidence-score 0.35`: umbral configurable de similitud vectorial para abstenerse. Debe calibrarse con el corpus real; no es una garantía semántica.
 - `--llm-model ID` y `--embedding-model ID`: modelos alternativos disponibles localmente o en Hugging Face.
 

@@ -79,6 +79,32 @@ class FusionAndRerankingTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].score, 0.7)
 
+    def test_reranker_candidate_limit_must_cover_top_k(self):
+        with self.assertRaisesRegex(ValueError, "at least top_k"):
+            hybrid_search(
+                "q",
+                ["a", "b", "c"],
+                lambda query, limit: [(0, 0.9), (1, 0.8), (2, 0.7)],
+                top_k=2,
+                candidate_k=3,
+                reranker=lambda query, texts: [0.1],
+                reranker_candidate_k=1,
+            )
+
+    def test_reranker_candidate_limit_caps_the_shortlist(self):
+        seen = []
+        results = hybrid_search(
+            "q",
+            ["a", "b", "c"],
+            lambda query, limit: [(0, 0.9), (1, 0.8), (2, 0.7)],
+            top_k=2,
+            candidate_k=3,
+            reranker=lambda query, texts: seen.extend(texts) or [0.1, 0.9],
+            reranker_candidate_k=2,
+        )
+        self.assertEqual(len(seen), 2)
+        self.assertEqual([hit.index for hit in results], [1, 0])
+
 
 class RetrievalMetricTests(unittest.TestCase):
     def test_recall_mrr_and_graded_ndcg(self):

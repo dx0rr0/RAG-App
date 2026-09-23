@@ -134,6 +134,7 @@ def hybrid_search(
     candidate_k=20,
     rrf_constant=60,
     reranker=None,
+    reranker_candidate_k=None,
 ):
     """Fuse vector and lexical candidate ranks, then optionally rerank candidates.
 
@@ -142,6 +143,14 @@ def hybrid_search(
     """
     if top_k < 0 or candidate_k < 0:
         raise ValueError("top_k and candidate_k must be non-negative")
+    if reranker_candidate_k is not None and reranker_candidate_k < 0:
+        raise ValueError("reranker_candidate_k must be non-negative")
+    if (
+        reranker is not None
+        and reranker_candidate_k is not None
+        and reranker_candidate_k < top_k
+    ):
+        raise ValueError("reranker_candidate_k must be at least top_k")
     if top_k == 0 or not documents:
         return []
 
@@ -162,7 +171,10 @@ def hybrid_search(
     lexical_scores = {int(index): float(score) for index, score in lexical_results}
 
     if reranker is not None and fused:
-        candidate_indices = [int(index) for index, _ in fused]
+        rerank_limit = len(fused)
+        if reranker_candidate_k is not None:
+            rerank_limit = min(len(fused), reranker_candidate_k)
+        candidate_indices = [int(index) for index, _ in fused[:rerank_limit]]
         candidate_texts = [str(documents[index]) for index in candidate_indices]
         raw_scores = reranker(query, candidate_texts)
         try:
@@ -179,7 +191,7 @@ def hybrid_search(
             scored.append((index, score, order))
         scored.sort(key=lambda item: (-item[1], item[2]))
         fused_score_map = dict(fused)
-        return [
+        reranked = [
             RankedDocument(
                 index=index,
                 score=score,
@@ -187,8 +199,23 @@ def hybrid_search(
                 bm25_score=lexical_scores.get(index),
                 fusion_score=fused_score_map[index],
             )
-            for index, score, _ in scored[:top_k]
+            for index, score, _ in scored
         ]
+        if len(reranked) < top_k:
+            reranked_ids = {hit.index for hit in reranked}
+            fused_scores = dict(fused)
+            reranked.extend(
+                RankedDocument(
+                    index=int(index),
+                    score=float(score),
+                    vector_score=vector_scores.get(int(index)),
+                    bm25_score=lexical_scores.get(int(index)),
+                    fusion_score=float(fused_scores[index]),
+                )
+                for index, score in fused
+                if int(index) not in reranked_ids
+            )
+        return reranked[:top_k]
 
     return [
         RankedDocument(

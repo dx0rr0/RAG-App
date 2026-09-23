@@ -1,8 +1,10 @@
 import argparse
+import sys
 import textwrap
 
 from api_config import get_openrouter_api_key
 from hybrid_retrieval import BM25Index, load_cross_encoder
+from jev_reranker import JevReranker, JevRerankerError
 from llm_interaction import ask, load_model, openrouter_faithfulness_checker
 from vector_db_manager import (
     DEFAULT_EMBEDDING_MODEL,
@@ -41,6 +43,24 @@ def build_parser():
     )
     parser.add_argument("--candidate-k", type=int, default=20)
     parser.add_argument("--rrf-constant", type=int, default=60)
+    parser.add_argument(
+        "--reranker",
+        choices=("none", "jev"),
+        default="none",
+        help="Optional Jev direct-evidence reranker for hybrid retrieval.",
+    )
+    parser.add_argument(
+        "--reranker-candidate-k",
+        type=int,
+        default=9,
+        help="Maximum fused candidates sent to the reranker (default: 9).",
+    )
+    parser.add_argument(
+        "--jev-max-estimated-cost-usd",
+        type=float,
+        default=0.001,
+        help="Per-query Jev preflight estimate ceiling; over-limit queries keep RRF order.",
+    )
     parser.add_argument(
         "--reranker-model",
         help="Optional sentence-transformers cross-encoder model ID for hybrid mode.",
@@ -89,6 +109,18 @@ def main(argv=None):
         raise SystemExit("--min-evidence-score must be between -1 and 1")
     if args.reranker_model and args.retrieval_mode != "hybrid":
         raise SystemExit("--reranker-model requires --retrieval-mode hybrid")
+    if args.reranker != "none" and args.retrieval_mode != "hybrid":
+        raise SystemExit("--reranker jev requires --retrieval-mode hybrid")
+    if args.reranker != "none" and args.reranker_model:
+        raise SystemExit("Choose either --reranker jev or --reranker-model, not both")
+    if (args.reranker == "jev" or args.reranker_model) and args.reranker_candidate_k < args.top_k:
+        raise SystemExit("--reranker-candidate-k must be at least --top-k")
+    if (args.reranker == "jev" or args.reranker_model) and args.reranker_candidate_k < 1:
+        raise SystemExit("--reranker-candidate-k must be at least 1")
+    if args.jev_max_estimated_cost_usd < 0:
+        raise SystemExit("--jev-max-estimated-cost-usd must be non-negative")
+    if args.reranker == "jev" and not args.index_only and not get_openrouter_api_key():
+        raise SystemExit("Set OPENROUTER_API_KEY before using --reranker jev.")
 
     embedding_function = None
     if not args.index_only:
@@ -124,10 +156,28 @@ def main(argv=None):
         api_model = "openai/gpt-6-luna"
     bm25_index = None
     reranker = None
+    reranker_candidate_k = None
     if args.retrieval_mode == "hybrid":
         bm25_index = BM25Index(frame["page_content"].fillna("").astype(str).tolist())
         if args.reranker_model:
             reranker = load_cross_encoder(args.reranker_model, device=args.device)
+        elif args.reranker == "jev":
+            try:
+                jev = JevReranker(
+                    max_estimated_cost_usd=args.jev_max_estimated_cost_usd
+                )
+            except JevRerankerError as exc:
+                print(f"[Jev] {exc} Se usará RRF.", file=sys.stderr)
+            else:
+                reranker_candidate_k = args.reranker_candidate_k
+
+                def reranker(query, candidate_texts):
+                    try:
+                        return jev(query, candidate_texts)
+                    except JevRerankerError as exc:
+                        print(f"[Jev] {exc}", file=sys.stderr)
+                        # Preserve the incoming RRF order when Jev cannot rerank.
+                        return list(range(len(candidate_texts), 0, -1))
     print("Welcome! Type 'exit' to quit.")
     while True:
         try:
@@ -154,6 +204,7 @@ def main(argv=None):
             candidate_k=args.candidate_k,
             rrf_constant=args.rrf_constant,
             reranker=reranker,
+            reranker_candidate_k=reranker_candidate_k,
             min_evidence_score=args.min_evidence_score,
             faithfulness_checker=(
                 openrouter_faithfulness_checker if args.check_faithfulness else None
