@@ -46,9 +46,21 @@ class JevReranker:
         self.api_key = api_key if api_key is not None else get_openrouter_api_key()
         self.cache_path = Path(cache_path)
         self.max_estimated_cost_usd = float(max_estimated_cost_usd)
+        self.last_cache_hit = False
+        self.last_reported_cost_usd = None
+        self.last_cost_usd = None
+        self.last_cost_source = None
+        self.last_input_tokens = None
+        self.last_latency_seconds = None
         self._cache = self._load_cache()
 
     def __call__(self, query, candidate_texts):
+        self.last_cache_hit = False
+        self.last_reported_cost_usd = None
+        self.last_cost_usd = None
+        self.last_cost_source = None
+        self.last_input_tokens = None
+        self.last_latency_seconds = None
         candidates = [str(text) for text in candidate_texts]
         if not candidates:
             return []
@@ -76,6 +88,7 @@ class JevReranker:
                 raise JevRerankerError(
                     "La entrada de caché Jev no es válida; revísala antes de continuar."
                 )
+            self.last_cache_hit = True
             print("[Jev] Reutilizando scores en caché; coste API $0.", file=sys.stderr)
             return list(cached_scores)
 
@@ -94,6 +107,7 @@ class JevReranker:
         started = time.perf_counter()
         response = self._post_json(payload)
         latency = time.perf_counter() - started
+        self.last_latency_seconds = latency
         try:
             scores = self._parse_scores(response, len(candidates))
         except JevRerankerError:
@@ -120,12 +134,18 @@ class JevReranker:
 
         usage = response.get("usage") or {}
         reported_cost = usage.get("cost")
+        self.last_input_tokens = usage.get("input_tokens")
         if isinstance(reported_cost, (int, float)) and not isinstance(reported_cost, bool):
-            cost_text = f"${float(reported_cost):.8f} reportados"
+            self.last_reported_cost_usd = float(reported_cost)
+            self.last_cost_usd = self.last_reported_cost_usd
+            self.last_cost_source = "reported"
+            cost_text = f"${self.last_cost_usd:.8f} reportados"
         else:
             input_tokens = usage.get("input_tokens")
             if isinstance(input_tokens, int) and input_tokens >= 0:
                 estimated = input_tokens * JEV_INPUT_USD_PER_MILLION / 1_000_000
+                self.last_cost_usd = estimated
+                self.last_cost_source = "token_estimate"
                 cost_text = f"~${estimated:.8f} estimados (sin coste reportado)"
             else:
                 cost_text = "coste no informado por OpenRouter"

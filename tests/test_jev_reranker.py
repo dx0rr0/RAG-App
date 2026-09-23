@@ -62,6 +62,9 @@ class JevRerankerTests(unittest.TestCase):
                 "pasaje dos",
             )
             self.assertEqual(urlopen.call_args.kwargs["timeout"], 45)
+            self.assertEqual(reranker.last_cost_usd, 0.0000042)
+            self.assertEqual(reranker.last_cost_source, "reported")
+            self.assertFalse(reranker.last_cache_hit)
 
     def test_cache_reuses_scores_without_storing_query_or_passages(self):
         response = _Response({
@@ -73,8 +76,11 @@ class JevRerankerTests(unittest.TestCase):
         ) as urlopen:
             first = self.make_reranker(directory)
             self.assertEqual(first("pregunta privada", ["texto privado"]), [0.8])
+            self.assertEqual(first.last_cost_usd, 0.000001)
             second = self.make_reranker(directory)
             self.assertEqual(second("pregunta privada", ["texto privado"]), [0.8])
+            self.assertTrue(second.last_cache_hit)
+            self.assertIsNone(second.last_cost_usd)
             self.assertEqual(urlopen.call_count, 1)
 
             cache_text = (Path(directory) / "jev-cache.json").read_text(encoding="utf-8")
