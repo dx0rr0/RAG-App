@@ -150,3 +150,24 @@ Se transcribieron dos vídeos del usuario con Qwen3 ASR 0.6B a través de OpenRo
 | v2 `zq3fDg0MMpQ` | 1 h 10 min 46 s | 11.298 | 15 | $0.01423241 | [transcripción](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/video-sample-zq3fDg0MMpQ/qwen3-asr-0.6b_transcript_es.txt>) · [metadata](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/video-sample-zq3fDg0MMpQ/qwen3-asr-0.6b_transcript_es.metadata.json>) |
 
 Ambos textos y sus metadatos están disponibles para preparar el corpus, pero todavía no se han indexado ni usado para repetir las métricas de retrieval, reranking o abstención. El coste de estas transcripciones suma **$0.02076587**; el acumulado conocido actualizado es **$0.07264964**.
+
+## Piloto de reranking con Jev (2026-09-23)
+
+Probé `typesafe/jev-1.13` por OpenRouter como segunda etapa tras BM25. Jev puntúa si cada pasaje contiene evidencia directa para responder; después se ordena la shortlist por esa puntuación. Este patrón de shortlist + decisión por candidato es el que describe la [guía de reranking de TypeSafe](https://docs.typesafe.ai/cookbooks/rerank_typesafe). Como cualquier reranker, Jev solo puede reordenar los candidatos recibidos, no recuperar fragmentos que BM25 dejó fuera.
+
+La prueba usa las mismas 12 consultas textualmente revisadas del corpus local: 9 respondibles y 3 sin respuesta en el texto, procedentes de los tres vídeos. Pasé a Jev los primeros 9 candidatos BM25 de cada consulta (108 juicios) y comparé el orden anterior y posterior. Las nueve respuestas gold estaban dentro de esas nueve posiciones antes de rerank.
+
+| Métrica | BM25 top 9 | Jev reranked |
+|---|---:|---:|
+| Recall@3 (9 positivas) | 0.667 (6/9) | 1.000 (9/9) |
+| MRR | 0.568 | 0.944 |
+| nDCG@3 | 0.544 | 0.959 |
+| Recall@5 | 0.889 (8/9) | 1.000 (9/9) |
+
+Rangos del fragmento gold por consulta: q01 `4→1`, q02 `2→1`, q03 `1→1`, q05 `1→1`, q06 `2→1`, q07 `1→2`, q09 `4→1`, q10 `9→1`, q11 `2→1`. Jev mejoró seis rangos, dejó dos iguales y bajó uno un puesto; no cambió la cobertura porque todos los gold ya estaban en la shortlist BM25 top 9.
+
+Las puntuaciones máximas Jev en las 9 consultas respondibles fueron `0.81–0.96`; en las 3 no respondibles, `0.02–0.03`. En esta muestra, los umbrales probados de `0.3`, `0.5`, `0.7` y `0.8` separan todos los casos. Es una señal prometedora para evaluar abstención, no una calibración: 12 consultas curadas no bastan para elegir un umbral de producción.
+
+OpenRouter reportó **$0.001178772** para la ejecución guardada (28.066 tokens de entrada, 2.087 de salida). La primera tanda de 120 juicios se cobró **$0.001297464**, pero un error local al procesar su respuesta impidió guardar los scores; repetí con 108 juicios top 9. Incluyo ambos importes en el coste del experimento: **$0.002476236**. El total conocido pasa de **$0.07264964** a **$0.075125876** de los $7 cargados; quedan aproximadamente **$6.924874**. El precio publicado para Jev 1.13 es $0.042/M tokens de entrada y $0/M de salida ([OpenRouter](https://openrouter.ai/typesafe/jev-1.13/)); para el gasto de esta prueba usé el coste real informado por OpenRouter.
+
+Resultados por consulta, rankings, puntuaciones, tokens y tiempos: [JSON local del piloto](<C:/Users/Daniel Chorro/Documents/Codex/2026-09-22/ay/rag-eval-corpus-qwen-2026-09-23/jev_rerank_pilot_results.json>). Esto evalúa recuperación de evidencia en el texto transcrito; no mide la calidad de respuestas generadas ni valida las transcripciones contra el audio.
