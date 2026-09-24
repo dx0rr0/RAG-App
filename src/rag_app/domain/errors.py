@@ -16,5 +16,3 @@ class CostLimitError(ApplicationError):
 
 class ProviderError(ApplicationError):
     pass
-
-\n

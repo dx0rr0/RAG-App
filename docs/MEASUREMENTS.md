@@ -336,3 +336,12 @@ Hora de referencia para este registro: 2026-09-22 23:10 CEST (21:10 UTC). Las pr
 - El smoke test HTTP usa `TestClient` y no inicia un servidor de red ni llama a OpenRouter. No se midió la extracción real de YouTube, compatibilidad en vivo con OpenRouter, audio largo ni calidad semántica sobre consultas etiquetadas de un corpus real.
 
 La batería es un fixture mecánico pequeño, no una estimación de calidad semántica. Las 61 pruebas previas cubrían la superficie del CLI anterior; las 21 nuevas validan el reemplazo y no son una comparación de cobertura uno a uno.
+
+## 2026-09-24 — Presentación MCP local
+
+- Situación base: después del refactor web, suite **21/21**; benchmark de retrieval (3 consultas, k=3): BM25 `1.0000/1.0000/1.0000`, vector `1.0000/0.8333/0.7936`, RRF `1.0000/1.0000/0.9907`, stub léxico `1.0000/1.0000/1.0000` (Recall@k/MRR/nDCG@k).
+- Añadí una presentación `stdio` con cinco herramientas MCP. Catálogo y lectura de transcripciones usan SQLite local; búsqueda y chat delegan a los servicios existentes. No expuse refresco del canal ni aprobación de transcripciones al host MCP.
+- Validación final: suite **25/25**; las cuatro pruebas nuevas cubren descubrimiento/llamada MCP in-memory, lecturas sin IA, truncado explícito del transcript, búsqueda híbrida con fuente y coste, chat con cita y abstención en biblioteca vacía. La prueba usa SQLite temporal y modelos simulados: **0 llamadas OpenRouter**.
+- El benchmark mecánico de 3 consultas mantiene exactamente las métricas base. Sintaxis AST correcta en **30 archivos Python**; `pip check` no detecta dependencias rotas; `git diff --check` no reporta errores. El SDK instalado fue `mcp 2.2.0` (línea requerida `mcp>=2,<3`).
+- Se encontraron y retiraron dos marcadores literales `\\n` al final de `domain/errors.py` y `domain/entities.py`, que impedían el análisis sintáctico completo. Coste del cambio y validación: **$0 en llamadas a OpenRouter**; no se accedió a YouTube.
+- El cliente MCP oficial completó también el handshake `stdio` contra el ejecutable `video-rag-mcp`, listó las cinco herramientas y leyó una SQLite temporal vacía. No se midió todavía una sesión interactiva con Claude Desktop/IDE ni la latencia/calidad/coste real de búsqueda o chat.

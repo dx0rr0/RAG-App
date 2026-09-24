@@ -40,5 +40,3 @@ class AIResult:
     cost_usd: Optional[float]
     usage: dict
     generation_id: Optional[str] = None
-
-\n

@@ -14,6 +14,7 @@ dependencies = [
   "jinja2>=3.1,<4",
   "pydantic>=2.8,<3",
   "pytubefix>=8.0,<11",
+  "mcp>=2,<3",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,7 @@ test = ["httpx2>=2,<3"]
 
 [project.scripts]
 video-rag = "rag_app.presentation.web:run"
+video-rag-mcp = "rag_app.presentation.mcp_server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

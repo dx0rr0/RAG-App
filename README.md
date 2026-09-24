@@ -9,7 +9,7 @@ The Python application uses four English-named layers under `src/rag_app`:
 - `domain`: retrieval calculations, entities, ports, and application errors.
 - `application`: channel catalog, ingestion, retrieval, chat, chunking, and worker use cases.
 - `adapters`: SQLite persistence, YouTube metadata/audio, OpenRouter, and configuration.
-- `presentation`: the FastAPI web interface, templates, and static assets.
+- `presentation`: the FastAPI web interface, templates, static assets, and MCP `stdio` server.
 
 SQLite stores channel/video metadata, transcription jobs, transcripts, chunks and their vectors, and chat history. Hybrid retrieval is the default: BM25 and BGE-M3 vector rankings are combined with reciprocal rank fusion (RRF). Jev reranking is optional. This app does not use Qdrant or a local vector database service.
 
@@ -45,6 +45,31 @@ video-rag
 ```
 
 Or use `python -m rag_app.presentation.web` after installing the package. Open <http://127.0.0.1:8000>. The server binds to localhost only. SQLite is created at `data/rag_app.sqlite3`; set `RAG_APP_DATABASE` to choose another path. The web process starts a SQLite-backed background worker. If the process stops while a paid request is in flight, the job is marked failed; it requires explicit reapproval, and any already-saved transcript or vectors are reused. For a single local instance, do not run multiple web worker processes against the same database.
+
+## MCP server
+
+The same application services are available to MCP hosts through a local `stdio` server. It shares the web app's SQLite database and exposes five tools:
+
+- `list_channels`, `list_channel_videos`, and `get_video_transcript` read local SQLite and do not call AI providers.
+- `search_transcripts` uses the existing BM25 + BGE-M3 + RRF retrieval path. It makes one BGE-M3 embedding request through OpenRouter.
+- `ask_video_library` uses the same retrieval and cited-answer path with GPT-6 Luna (`low`). Faithfulness verification is optional and disabled by default for MCP calls to avoid an extra model request; enable it explicitly when needed.
+
+The MCP interface does not expose transcription approval or channel refresh. This keeps paid transcription behind the web app's explicit approval and cost estimate. Search/chat tool descriptions and results identify provider/model use and return reported cost metadata. MCP runs as a local subprocess; it does not open a network port.
+
+After installing the project and configuring the OpenRouter key in `.env`, connect a local MCP host by adding a stdio server entry like this:
+
+```json
+{
+  "mcpServers": {
+    "video-rag": {
+      "command": "C:\\Users\\YOUR_NAME\\Coding Projects\\RAG-App\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "rag_app.presentation.mcp_server"]
+    }
+  }
+}
+```
+
+The server loads `.env` from the installed project root; do not put API keys in the MCP client config. The equivalent command is `video-rag-mcp`.
 
 ## Retrieval evaluation
 

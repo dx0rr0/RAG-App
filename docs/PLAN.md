@@ -10,6 +10,7 @@
 - [x] Use SQLite for metadata, transcript, chunks, embeddings, durable jobs, and conversations; do not add Qdrant.
 - [x] Require explicit approval, estimate audio cost before queueing, cap batch spend, avoid automatic paid retries, and retain completed transcript/embedding work for explicit retry after an interrupted request.
 - [x] Add source-linked answers, insufficient-evidence abstention, and an optional-by-request faithfulness check that is enabled in the UI with its extra model call disclosed.
+- [x] Add a local MCP `stdio` presentation exposing SQLite library reads, hybrid transcript search, and cited chat through existing application services; keep transcription approval out of MCP.
 - [x] Preserve a deterministic retrieval benchmark and log baseline/current measurements.
 
 ## Follow-up work
@@ -30,3 +31,4 @@
 - Approval over the configured estimate fails before the worker contacts an AI provider.
 - A worker restart marks in-flight work for review instead of automatically repeating a potentially billable request; explicit reapproval resumes saved transcript/embedding stages.
 - Retrieval defaults to hybrid BM25 + BGE-M3 + RRF; chat citations resolve to source video URLs.
+- MCP tools are discoverable and call the same services as the web presentation; SQLite-only tools make no provider requests.
