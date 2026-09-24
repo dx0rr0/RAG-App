@@ -1,91 +1,158 @@
 # Video RAG
 
-A local web app for building a searchable library from YouTube channels. It discovers channel videos, asks for explicit approval before transcription, and answers questions with links to transcript sources.
+**Build a searchable library from YouTube channels and ask grounded questions across their videos.**
+
+Video RAG is a local web app and MCP server for discovering channel videos, explicitly approving transcription jobs, and chatting with source-cited transcripts. Application data lives in SQLite; all transcription, embedding, and chat inference runs remotely through OpenRouter.
+
+## Features
+
+- Save YouTube channels and refresh their video catalogs without starting transcription.
+- Select videos and approve transcription batches only after reviewing the estimated cost.
+- Search transcripts with hybrid BM25 and BGE-M3 retrieval, combined using reciprocal rank fusion (RRF).
+- Ask questions with video links, timestamps, citation checks, and abstention when evidence is insufficient.
+- Optionally run a faithfulness check or Jev reranking.
+- Connect MCP-compatible AI hosts to the same library through a local `stdio` server.
 
 ## Architecture
 
-The Python application uses four English-named layers under `src/rag_app`:
+```mermaid
+flowchart LR
+    Browser[Web browser] --> Web[FastAPI presentation]
+    Host[MCP host] -->|stdio / MCP| MCP[MCP presentation]
+    Web --> App[Application services]
+    MCP --> App
+    App --> SQLite[(SQLite)]
+    App -->|remote inference| OpenRouter[OpenRouter]
+    OpenRouter -->|results| App
+    App -->|persist transcripts, embeddings, and chat| SQLite
+    YouTube[YouTube] --> Catalog[Channel and video discovery]
+    Catalog --> SQLite
+```
 
-- `domain`: retrieval calculations, entities, ports, and application errors.
-- `application`: channel catalog, ingestion, retrieval, chat, chunking, and worker use cases.
-- `adapters`: SQLite persistence, YouTube metadata/audio, OpenRouter, and configuration.
-- `presentation`: the FastAPI web interface, templates, static assets, and MCP `stdio` server.
+The project uses four layers under `src/rag_app`:
 
-SQLite stores channel/video metadata, transcription jobs, transcripts, chunks and their vectors, and chat history. Hybrid retrieval is the default: BM25 and BGE-M3 vector rankings are combined with reciprocal rank fusion (RRF). Jev reranking is optional. This app does not use Qdrant or a local vector database service.
+| Layer | Responsibility |
+| --- | --- |
+| `domain` | Entities, ports, validation, and retrieval calculations. |
+| `application` | Catalog, ingestion, retrieval, chat, and background-worker use cases. |
+| `adapters` | SQLite, YouTube, OpenRouter, and configuration. |
+| `presentation` | FastAPI web/API and the MCP server. |
 
-## AI and cost controls
+SQLite stores channel and video metadata, jobs, transcripts, chunks, chat history, and serialized embedding vectors. Retrieval computes BM25 and cosine similarity, then combines their rankings with RRF. There is no separate vector database service or Qdrant dependency.
 
-All AI inference is remote through OpenRouter; the application never loads local LLM, ASR, embedding, or Whisper models:
+## Models and cost controls
 
-- Transcription: `qwen/qwen3-asr-0.6b`.
-- Embeddings: `baai/bge-m3` through OpenRouter.
-- Chat and faithfulness checks: `openai/gpt-6-luna`, `reasoning_effort=low`.
-- Optional reranking: `typesafe/jev-1.13`.
+| Task | Provider/model |
+| --- | --- |
+| Transcription | `qwen/qwen3-asr-0.6b` via OpenRouter |
+| Embeddings | `baai/bge-m3` via OpenRouter |
+| Chat and faithfulness checks | `openai/gpt-6-luna`, `reasoning_effort=low` |
+| Optional reranking | `typesafe/jev-1.13` via OpenRouter |
 
-Channel discovery and refresh do not transcribe. The user must select videos and confirm a batch. The default transcription cap is `$0.10` per approved batch, estimated at `$0.000003` per audio second; a batch over the cap is rejected before creating jobs. Set `RAG_MAX_BATCH_USD` to lower it. Requests are not automatically retried after provider failures. Audio is downloaded to a temporary directory and removed after the remote transcription request. Chat output is limited to 384 tokens; the faithfulness check is a second remote request and is shown as such in the UI. Jev is off by default and has a `$0.001` estimated per-query cap.
+There are no local LLM, ASR, embedding, Whisper, or model-weight downloads.
 
-OpenRouter charges your account. Review the cost estimate before approving each batch. Embedding prices are estimated from the configured `$0.01/M tokens` rate when the response omits cost; transcription estimates use audio duration. Chat costs are shown only when reported by OpenRouter. If the provider does not report a cost, the UI says so instead of showing a false `$0`.
+- Channel discovery and refresh never start paid transcription. Transcription requires an explicit selection and approval.
+- The default estimated transcription cap is **$0.10 per approved batch**. The fallback estimate is `$0.000003` per audio second; set `RAG_MAX_BATCH_USD` lower if desired. Batches over the cap are rejected before jobs are queued.
+- Failed provider calls are not automatically retried. Saved transcripts and embeddings are reused after explicit reapproval.
+- Audio is downloaded to a temporary directory, sent to the remote transcription provider, and removed afterward.
+- Chat output is capped at 384 tokens. The optional faithfulness check is another model request; the web UI discloses it.
+- Jev is off by default and has a `$0.001` estimated per-query cap.
+- Cost estimates are estimates. OpenRouter may report actual costs for chat and embeddings; if it does not, the app shows that the cost is unavailable instead of displaying `$0`.
 
-## Run locally
+OpenRouter receives the audio, queries, or transcript chunks needed for the requested operation and charges your account. No real provider calls are made by the local test suite or retrieval benchmark.
 
-Requires Python 3.10+ and an OpenRouter API key. No model weights or local inference runtimes are needed.
+## Quick start
 
-With GNU Make installed, create the environment and install dependencies with `make setup`, then start both the web interface and JSON API with `make serve`. The app listens only on localhost at <http://127.0.0.1:8000>; the API docs are at <http://127.0.0.1:8000/docs>.
-
-Other reusable commands are `make test`, `make benchmark`, and `make check` (tests plus benchmark). The tests and retrieval benchmark use local fixtures and do not call OpenRouter.
+Requirements: Python 3.10+, GNU Make, and an OpenRouter API key. From the repository root:
 
 ```powershell
-cd "path\to\RAG-App"
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[test]"
+make setup
 Copy-Item .env.example .env
 ```
 
-Put your key in `.env` as `OPENROUTER_API_KEY=...`. The app also accepts the existing `OPENROUTER_APIKEY` name. Never commit `.env`.
+Add your key to `.env`:
 
-```powershell
-video-rag
+```dotenv
+OPENROUTER_API_KEY=your-openrouter-key
 ```
 
-Or use `python -m rag_app.presentation.web` after installing the package. Open <http://127.0.0.1:8000>. The server binds to localhost only. SQLite is created at `data/rag_app.sqlite3`; set `RAG_APP_DATABASE` to choose another path. The web process starts a SQLite-backed background worker. If the process stops while a paid request is in flight, the job is marked failed; it requires explicit reapproval, and any already-saved transcript or vectors are reused. For a single local instance, do not run multiple web worker processes against the same database.
+Start the web app and API:
+
+```powershell
+make serve
+```
+
+Open <http://127.0.0.1:8000> for the web app or <http://127.0.0.1:8000/docs> for the interactive API documentation. The server binds to localhost. Stop it with `Ctrl+C`.
+
+The app also accepts the legacy key name `OPENROUTER_APIKEY`. Never commit `.env`.
+
+### Without Make
+
+On Windows PowerShell:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[test]"
+Copy-Item .env.example .env
+.venv\Scripts\python.exe -m rag_app.presentation.web
+```
+
+On macOS or Linux, use `python3 -m venv .venv`, `.venv/bin/python -m pip install -e ".[test]"`, copy `.env.example` to `.env`, and run `.venv/bin/python -m rag_app.presentation.web`.
+
+## Make commands
+
+| Command | Description |
+| --- | --- |
+| `make setup` | Create `.venv` and install the app and test dependencies. |
+| `make serve` | Run the local web app and JSON API at `127.0.0.1:8000`. |
+| `make test` | Run the offline unit test suite. |
+| `make benchmark` | Run the deterministic retrieval benchmark. |
+| `make check` | Run tests and the retrieval benchmark. |
+
+`make setup` uses `py` on Windows and `python3` on macOS/Linux. The other targets use the Python executable inside `.venv`.
 
 ## MCP server
 
-The same application services are available to MCP hosts through a local `stdio` server. It shares the web app's SQLite database and exposes five tools:
+The MCP server exposes the same SQLite library and application services to compatible AI hosts. It uses the official Python MCP SDK v2 and local `stdio` transport: the host launches the server as a subprocess, so no network port is opened.
 
-- `list_channels`, `list_channel_videos`, and `get_video_transcript` read local SQLite and do not call AI providers.
-- `search_transcripts` uses the existing BM25 + BGE-M3 + RRF retrieval path. It makes one BGE-M3 embedding request through OpenRouter.
-- `ask_video_library` uses the same retrieval and cited-answer path with GPT-6 Luna (`low`). Faithfulness verification is optional and disabled by default for MCP calls to avoid an extra model request; enable it explicitly when needed.
+| Tool | Behavior | Provider calls |
+| --- | --- | --- |
+| `list_channels` | List saved channels and video counts. | None |
+| `list_channel_videos` | List videos for a channel. | None |
+| `get_video_transcript` | Read a saved transcript, up to 20,000 characters. | None |
+| `search_transcripts` | Hybrid search; can be scoped to channel or video IDs. | BGE-M3 query embedding through OpenRouter. |
+| `ask_video_library` | Answer with citations and abstain when evidence is insufficient. | BGE-M3 and GPT-6 Luna; optional extra faithfulness request. |
 
-The MCP interface does not expose transcription approval or channel refresh. This keeps paid transcription behind the web app's explicit approval and cost estimate. Search/chat tool descriptions and results identify provider/model use and return reported cost metadata. MCP runs as a local subprocess; it does not open a network port.
+The MCP interface does not expose channel refresh or transcription approval. Faithfulness verification is off by default for MCP chat calls to avoid an additional request. Search and chat results include provider/model and reported cost metadata.
 
-After installing the project and configuring the OpenRouter key in `.env`, connect a local MCP host by adding a stdio server entry like this:
+After `make setup`, add a server entry to your MCP host configuration and replace the path with the repository location on your machine:
 
 ```json
 {
   "mcpServers": {
     "video-rag": {
-      "command": "C:\\Users\\YOUR_NAME\\Coding Projects\\RAG-App\\.venv\\Scripts\\python.exe",
+      "command": "C:\\path\\to\\RAG-App\\.venv\\Scripts\\python.exe",
       "args": ["-m", "rag_app.presentation.mcp_server"]
     }
   }
 }
 ```
 
-The server loads `.env` from the installed project root; do not put API keys in the MCP client config. The equivalent command is `video-rag-mcp`.
+The process reads the OpenRouter key from `.env`; do not put secrets in the host configuration. The installed console command is `video-rag-mcp`. MCP host settings differ, so use the equivalent command/arguments format for your host.
+
+This is a local, single-user server with no authentication or user isolation. Any host connected to it can access the local library. Do not expose it to untrusted remote clients as-is.
 
 ## Retrieval evaluation
 
-Run the deterministic, no-network fixture benchmark:
+Run the offline benchmark with `make benchmark` or:
 
 ```powershell
-python -m tests.retrieval_benchmark
+.venv\Scripts\python.exe -B -m tests.retrieval_benchmark
 ```
 
-The fixture checks ranking mechanics and reports Recall@k, MRR, and nDCG. It is not a claim about semantic quality on a production corpus. See [the retrieval evaluation notes](docs/RAG_EVALUATION.md) and [the measurement log](docs/MEASUREMENTS.md). All metrics on a real library should use reviewed query-to-source relevance labels.
+It reports Recall@k, MRR, and nDCG on a small deterministic fixture. These results check ranking mechanics; they are not a measure of semantic quality on a production corpus. For evaluation methodology and the measurement log, see [RAG evaluation](docs/RAG_EVALUATION.md) and [measurements](docs/MEASUREMENTS.md). Production-quality metrics require reviewed query-to-source relevance labels.
 
-## Project map
+## Project structure
 
 ```text
 src/rag_app/
@@ -94,6 +161,6 @@ src/rag_app/
   adapters/
   presentation/
 tests/
-scripts/
 docs/
+scripts/
 ```
