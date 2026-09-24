@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vídeos · RAG</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Vídeos RAG">▶ <span>Vídeos RAG</span></a>
+    <span class="local-badge">Procesamiento por OpenRouter · datos en SQLite local</span>
+  </header>
+  <main class="layout">
+    <aside class="library panel">
+      <div class="section-heading"><div><p class="eyebrow">TU BIBLIOTECA</p><h1>Canales</h1></div><button id="refresh-all" class="icon-button" title="Actualizar canales">↻</button></div>
+      <form id="channel-form" class="add-channel">
+        <label class="sr-only" for="channel-url">URL del canal de YouTube</label>
+        <input id="channel-url" type="url" placeholder="youtube.com/@canal" required>
+        <button class="primary small" type="submit">Añadir</button>
+      </form>
+      <p class="hint">Actualizar descubre vídeos nuevos; no inicia transcripciones automáticamente.</p>
+      <div id="channels" class="channel-list"><p class="muted">Cargando biblioteca…</p></div>
+      <section class="selection-box">
+        <div class="section-heading compact"><div><p class="eyebrow">VÍDEOS</p><h2>Seleccionados</h2></div><button id="select-visible" class="text-button">Todos</button></div>
+        <div id="videos" class="video-list"><p class="muted">Elige un canal para ver sus vídeos.</p></div>
+        <div class="approval-row"><div><span id="selection-count">0 vídeos</span><small id="selection-estimate">Estimación: $0.0000</small></div><button id="approve-videos" class="primary" disabled>Aprobar y transcribir</button></div>
+        <p class="hint">Límite por lote: <strong>${{ '%.2f'|format(max_batch_usd) }}</strong>. La aprobación es explícita.</p>
+      </section>
+      <section class="jobs-box"><div class="section-heading compact"><div><p class="eyebrow">PROCESAMIENTO</p><h2>Trabajos</h2></div><span id="job-count" class="count-pill">0</span></div><div id="jobs" class="job-list"><p class="muted">Sin trabajos.</p></div></section>
+    </aside>
+    <section class="chat panel">
+      <div class="chat-heading"><div><p class="eyebrow">CONSULTA TU BIBLIOTECA</p><h1>Habla con tus vídeos</h1><p>Respuestas basadas en transcripciones, con enlaces a las fuentes.</p></div><button id="new-chat" class="secondary">Nueva conversación</button></div>
+      <div class="chat-controls">
+        <label for="chat-scope">Alcance</label><select id="chat-scope"><option value="all">Todos los canales</option></select>
+        <label class="check-control"><input id="verify-faithfulness" type="checkbox" checked> Comprobar respaldo (una llamada extra)</label>
+        <label class="check-control"><input id="use-jev" type="checkbox"> Jev reranker (coste adicional, limitado)</label>
+      </div>
+      <div id="messages" class="messages" aria-live="polite"><div class="empty-state"><div class="play-mark">▶</div><h2>Tu biblioteca de vídeos, consultable</h2><p>Añade un canal, selecciona los vídeos que quieres transcribir y aprueba el lote.</p></div></div>
+      <form id="chat-form" class="composer"><label class="sr-only" for="question">Pregunta sobre tus vídeos</label><textarea id="question" rows="1" maxlength="2000" placeholder="Pregunta algo sobre los vídeos…" required></textarea><button class="send-button" type="submit" aria-label="Enviar pregunta">↑</button></form>
+      <p class="footnote">Búsqueda híbrida (BM25 + vectores, RRF) · SQLite local · OpenRouter para ASR, embeddings y chat.</p>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

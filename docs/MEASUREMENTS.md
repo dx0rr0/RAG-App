@@ -317,3 +317,22 @@ Hora de referencia para este registro: 2026-09-22 23:10 CEST (21:10 UTC). Las pr
 - La ruta de OpenRouter usa el modelo configurado, `reasoning_effort=low` y un máximo de **96 tokens de salida** para reformular. La llamada se hace una vez, el coste se informa por separado y los errores vuelven a la consulta original sin reintento. El historial está limitado a 8.000 caracteres, se conserva solo durante el proceso y `/clear` lo elimina. Con backend local, tanto historial como reformulación permanecen en el equipo.
 - Suite después del cambio: **61/61** pasan; incluye flujo CLI, límite de historial, reset, reformulación antes de búsqueda, uso de historial solo para resolver referencias, salida acotada y fallback. `cli_interface.py --help` funciona y `git diff --check` está limpio.
 - Todas las pruebas mockean la generación y la reformulación; no se llamó a OpenRouter y el gasto de evaluación fue **$0**. La métrica de retrieval con un LLM real y el coste real por seguimiento siguen pendientes de una prueba manual controlada.
+
+## 2026-09-24 — Refactor a capas y flujo web local
+
+### Antes de esta refactorización
+
+- En el mismo checkout, la suite pre-refactor pasó **61/61 tests** en 0.170 s con Python 3.12.14 del runtime de Codex.
+- El fixture determinista de retrieval midió (promedios macro, k=3): BM25 Recall@3/MRR/nDCG@3 = **1.0000/1.0000/1.0000**; vectores = **1.0000/0.8333/0.7936**; RRF = **1.0000/1.0000/0.9907**; stub de reranking léxico = **1.0000/1.0000/1.0000**.
+- El programa consistía en módulos planos y un CLI, con rutas de inferencia local/Parquet y sin biblioteca de canales, cola persistente ni interfaz web.
+
+### Después de esta refactorización
+
+- Suite determinista y web: `python -B -m unittest discover -v` en `.venv`; **21/21 pasaron** en 1.042 s, incluidos página principal, `/health`, biblioteca vacía, recursos estáticos, flujo de ingestión simulado y payloads OpenRouter simulados.
+- Benchmark determinista: `PYTHONPATH=src python -B -m tests.retrieval_benchmark`; mismo fixture y mismas métricas. BM25 **1.0000/1.0000/1.0000**; vectores **1.0000/0.8333/0.7936**; RRF **1.0000/1.0000/0.9907**; stub de reranking léxico **1.0000/1.0000/1.0000**.
+- Cobertura con dobles locales: persistencia SQLite, refresco de canales sin encolar, aprobación explícita y límite de coste, marcas de tiempo e índice de fragmentos, reanudación sin repetir transcripción, métricas de retrieval, citas, verificación de fidelidad, abstención sin evidencia, metadata de YouTube simulada y payloads Qwen, BGE-M3, Luna y Jev simulados.
+- Sintaxis: AST correcto para **28 archivos Python**; `node --check` pasó para el cliente web; `git diff --check` sin errores.
+- Coste de implementación: **$0 en llamadas a OpenRouter**. No se descargó audio de YouTube ni se cargaron modelos o pesos locales. La sonda confirmó que `torch`, `transformers`, `faster-whisper` y `sentence-transformers` no están instalados.
+- El smoke test HTTP usa `TestClient` y no inicia un servidor de red ni llama a OpenRouter. No se midió la extracción real de YouTube, compatibilidad en vivo con OpenRouter, audio largo ni calidad semántica sobre consultas etiquetadas de un corpus real.
+
+La batería es un fixture mecánico pequeño, no una estimación de calidad semántica. Las 61 pruebas previas cubrían la superficie del CLI anterior; las 21 nuevas validan el reemplazo y no son una comparación de cobertura uno a uno.

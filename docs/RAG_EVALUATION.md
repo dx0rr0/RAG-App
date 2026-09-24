@@ -1,3 +1,7 @@
+# Nota de alcance (2026-09-24)
+
+Las cifras y comandos que siguen documentan la implementación anterior. La aplicación actual usa SQLite y embeddings remotos de OpenRouter; ejecuta `python -m tests.retrieval_benchmark` para el fixture mecánico offline y consulta [MEASUREMENTS.md](MEASUREMENTS.md) para las mediciones posteriores a la refactorización. Falta revisar y volver a etiquetar consultas contra el chunking y retrieval actuales antes de afirmar calidad sobre el corpus real.
+
 # Evaluación del sistema RAG
 
 Fecha: 2026-09-23
