@@ -30,6 +30,10 @@ OpenRouter charges your account. Review the cost estimate before approving each 
 
 Requires Python 3.10+ and an OpenRouter API key. No model weights or local inference runtimes are needed.
 
+With GNU Make installed, create the environment and install dependencies with `make setup`, then start both the web interface and JSON API with `make serve`. The app listens only on localhost at <http://127.0.0.1:8000>; the API docs are at <http://127.0.0.1:8000/docs>.
+
+Other reusable commands are `make test`, `make benchmark`, and `make check` (tests plus benchmark). The tests and retrieval benchmark use local fixtures and do not call OpenRouter.
+
 ```powershell
 cd "path\to\RAG-App"
 py -m venv .venv

@@ -345,3 +345,10 @@ La batería es un fixture mecánico pequeño, no una estimación de calidad sem�
 - El benchmark mecánico de 3 consultas mantiene exactamente las métricas base. Sintaxis AST correcta en **30 archivos Python**; `pip check` no detecta dependencias rotas; `git diff --check` no reporta errores. El SDK instalado fue `mcp 2.2.0` (línea requerida `mcp>=2,<3`).
 - Se encontraron y retiraron dos marcadores literales `\\n` al final de `domain/errors.py` y `domain/entities.py`, que impedían el análisis sintáctico completo. Coste del cambio y validación: **$0 en llamadas a OpenRouter**; no se accedió a YouTube.
 - El cliente MCP oficial completó también el handshake `stdio` contra el ejecutable `video-rag-mcp`, listó las cinco herramientas y leyó una SQLite temporal vacía. No se midió todavía una sesión interactiva con Claude Desktop/IDE ni la latencia/calidad/coste real de búsqueda o chat.
+
+## 2026-09-24 — Comandos locales con Make
+
+- Añadí `make setup`, `make serve`, `make test`, `make benchmark` y `make check`. En Windows, los targets usan `.venv/Scripts/python.exe`; en Unix, `.venv/bin/python`.
+- `make check`: suite **25/25** y benchmark determinista completados; Recall@3/MRR/nDCG@3 se mantienen en BM25 `1.0000/1.0000/1.0000`, vector `1.0000/0.8333/0.7936`, RRF `1.0000/1.0000/0.9907`, reranker stub `1.0000/1.0000/1.0000`.
+- Arranqué `make serve` con una SQLite temporal vacía: Uvicorn escuchó en `127.0.0.1:8000`; `/health`, `/docs` y `/openapi.json` devolvieron HTTP 200. El proceso se detuvo tras la comprobación.
+- No se llamó a OpenRouter ni a YouTube; validación de Make y smoke test web: **$0** de coste de API.
